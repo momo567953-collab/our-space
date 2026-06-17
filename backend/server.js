@@ -212,6 +212,25 @@ io.on('connection', (socket) => {
     socket.to(roomKey).emit('mood-update', data);
   });
 
+  // Travel check-in relay
+  socket.on('checkin-add', (data) => {
+    const { roomKey } = socket.data || {};
+    if (!roomKey) return;
+    socket.to(roomKey).emit('checkin-add', data);
+  });
+  socket.on('checkin-delete', (data) => {
+    const { roomKey } = socket.data || {};
+    if (!roomKey) return;
+    socket.to(roomKey).emit('checkin-delete', data);
+  });
+
+  // Photo delete relay
+  socket.on('photo-delete', (data) => {
+    const { roomKey } = socket.data || {};
+    if (!roomKey) return;
+    socket.to(roomKey).emit('photo-delete', data);
+  });
+
   // ----- Data sync between clients -----
   // When a client joins, they request the other client's localStorage data
   socket.on('sync-request', (data) => {
