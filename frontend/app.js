@@ -425,6 +425,8 @@ function tryConnectSocket() {
     });
     socket.on('travel-update', (data) => {
       if (data.action === 'add' && data.record) {
+        // Ignore own events, prevent echo
+        if (data.record.by === myName) return;
         saveTravelRecord(data.record);
         // Refresh if currently viewing the province
         const backBtn = $('#btn-back-to-map');
@@ -546,11 +548,16 @@ function mergeRemoteData(incoming) {
     incoming.moods.forEach(m => { if (!ids.has(m.id)) { local.moods.unshift(m); addMoodHistory(m); changed = true; } });
     if (local.moods.length > 50) local.moods = local.moods.slice(0, 50);
   }
-  // Merge travel (by id)
+  // Merge travel (by id) — also dedup local after merge
   if (incoming.travel && incoming.travel.length) {
     if (!local.travel) local.travel = [];
-    const ids = new Set(local.travel.map(r => r.id));
-    incoming.travel.forEach(r => { if (!ids.has(r.id)) { local.travel.push(r); changed = true; } });
+    const localIds = new Set(local.travel.map(r => r.id));
+    incoming.travel.forEach(r => {
+      if (!localIds.has(r.id)) { local.travel.push(r); localIds.add(r.id); changed = true; }
+    });
+    // Final dedup pass
+    const seen = new Set();
+    local.travel = local.travel.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
   }
   // Pet state: prefer the one with higher overall stats
   if (incoming.petState) {
@@ -1242,7 +1249,11 @@ const provinceData = {
 function saveTravelRecord(r) {
   const data = getLocalRoomData();
   if (!data.travel) data.travel = [];
+  if (data.travel.find(t => t.id === r.id)) return;
   data.travel.push(r);
+  // Dedup by ID
+  const seen = new Set();
+  data.travel = data.travel.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
   saveLocalRoomData(data);
 }
 function removeTravelRecord(id) {
@@ -1418,7 +1429,8 @@ function showTravelModal(province, city) {
     reader.readAsDataURL(file);
   });
   $('#btn-cancel-travel').addEventListener('click', () => modal.remove());
-  $('#btn-save-travel').addEventListener('click', () => {
+  $('#btn-save-travel').addEventListener('click', (ev) => {
+    ev.preventDefault(); ev.stopPropagation();
     const spot = $('#travel-spot').value.trim();
     const date = $('#travel-date').value;
     if (!spot || !date) { alert('请填写景点和日期'); return; }
