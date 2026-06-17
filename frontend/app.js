@@ -104,30 +104,30 @@ function layoutPhotosInHeart() {
   const scale = cW / 38;
   const ox = cW / 2, oy = cH / 2 - 10;
   const n = photos.length;
-  if (n <= 12) {
+  const sizes = [56,62,68,73,78,58,64,70,76,82,55,66,72,60,74,80];
+  const sizes = [56,62,68,73,78,58,64,70,76,82,55,66,72,60,74,80];
+  if (n <= 14) {
     const step = (2*Math.PI) / n;
     for (let i = 0; i < n; i++) {
       const pos = heartCurve(step * i, scale, ox, oy);
-      photos[i].style.left = (pos.x - 35) + 'px';
-      photos[i].style.top = (pos.y - 35) + 'px';
-      photos[i].style.transform = `rotate(${Math.random()*20-10}deg)`;
+      const sz = sizes[i % sizes.length];
+      const jt = i % 2 ? -4 : 4;
+      photos[i].style.width = sz + 'px'; photos[i].style.height = sz + 'px';
+      photos[i].style.left = (pos.x + jt - sz/2) + 'px';
+      photos[i].style.top = (pos.y + jt - sz/2) + 'px';
+      photos[i].style.transform = `rotate(${(i*19)%14-7}deg)`;
     }
   } else {
-    const outlineCount = Math.min(n, 16);
-    const step = (2*Math.PI) / outlineCount;
-    for (let i = 0; i < outlineCount; i++) {
-      const pos = heartCurve(step * i, scale, ox, oy);
-      photos[i].style.left = (pos.x - 35) + 'px';
-      photos[i].style.top = (pos.y - 35) + 'px';
-      photos[i].style.transform = `rotate(${Math.random()*15-7}deg)`;
-    }
-    for (let i = outlineCount; i < n; i++) {
-      const t = Math.random() * 2*Math.PI;
-      const r = 0.2 + Math.random() * 0.6;
+    for (let i = 0; i < n; i++) {
+      const t = i * (2*Math.PI) / Math.min(n, 16);
+      const r = i < 16 ? 1.0 : 0.2 + Math.random() * 0.6;
       const pos = heartCurve(t, scale * r, ox, oy);
-      photos[i].style.left = (pos.x - 35) + 'px';
-      photos[i].style.top = (pos.y - 35) + 'px';
-      photos[i].style.transform = `rotate(${Math.random()*12-6}deg)`;
+      const sz = sizes[i % sizes.length];
+      if (i >= 16) { pos.x += (Math.random()-0.5)*20; pos.y += (Math.random()-0.5)*20; }
+      photos[i].style.width = sz + 'px'; photos[i].style.height = sz + 'px';
+      photos[i].style.left = (pos.x - sz/2) + 'px';
+      photos[i].style.top = (pos.y - sz/2) + 'px';
+      photos[i].style.transform = `rotate(${(i*19)%14-7}deg)`;
     }
   }
 }
@@ -431,6 +431,13 @@ function tryConnectSocket() {
     });
     socket.on('pair-error', (data) => msg($('#pair-msg'), data.msg, 'err'));
     socket.on('photo-new', (data) => { addPhotoToHeart(data); layoutPhotosInHeart(); savePhotoLocal(data); });
+    socket.on('photo-delete', (data) => {
+      removePhotoLocal(data.id);
+      const el = document.querySelector(`.photo-heart-item[data-id="${data.id}"]`);
+      if (el) el.remove();
+      layoutPhotosInHeart();
+      checkAlbumEmpty();
+    });
     socket.on('note-new', (data) => { addNoteCard(data); saveNoteLocal(data); });
     socket.on('milestone-new', (data) => { addMilestoneCard(data); saveMilestoneLocal(data); });
     socket.on('milestone-delete', (data) => { const el = document.querySelector(`.milestone-card[data-id="${data.id}"]`); if (el) el.remove(); checkTimelineEmpty(); removeMilestoneLocal(data.id); });
@@ -478,6 +485,12 @@ function tryConnectSocket() {
 function saveMilestoneLocal(ms) { const data = getLocalRoomData(); if (!data.milestones.find(m => m.id === ms.id)) { data.milestones.push(ms); saveLocalRoomData(data); } }
 function removeMilestoneLocal(id) { const data = getLocalRoomData(); data.milestones = data.milestones.filter(m => m.id !== id); saveLocalRoomData(data); }
 function savePhotoLocal(photo) { const data = getLocalRoomData(); if (!data.photos.find(p => p.id === photo.id)) { data.photos.push(photo); saveLocalRoomData(data); } }
+function removePhotoLocal(id) { const data = getLocalRoomData(); data.photos = data.photos.filter(p => p.id !== id); saveLocalRoomData(data); }
+function checkAlbumEmpty() {
+  const photos = document.querySelectorAll('.photo-heart-item');
+  const emptyMsg = $('#photo-empty-msg');
+  if (emptyMsg) emptyMsg.style.display = photos.length === 0 ? 'block' : 'none';
+}
 function removePhotoLocal(id) { const data = getLocalRoomData(); data.photos = data.photos.filter(p => p.id !== id); saveLocalRoomData(data); }
 function saveNoteLocal(note) { const data = getLocalRoomData(); if (!data.notes.find(n => n.id === note.id)) { data.notes.push(note); saveLocalRoomData(data); } }
 function removeNoteLocal(id) { const data = getLocalRoomData(); data.notes = data.notes.filter(n => n.id !== id); saveLocalRoomData(data); }
@@ -689,13 +702,25 @@ function uploadPhoto(file) {
 function addPhotoToHeart(data) {
   const emptyMsg = $('#photo-empty-msg'); if (emptyMsg) emptyMsg.style.display = 'none';
   if (document.querySelector(`.photo-heart-item[data-id="${data.id}"]`)) return;
-  // Use base64 src directly (from localStorage, no server file dependency)
   const src = data.src || '';
   if (!src) return;
   const card = document.createElement('div');
   card.className = 'photo-heart-item'; card.dataset.id = data.id;
-  card.innerHTML = `<img src="${src}" alt="photo" loading="lazy"><div class="photo-who">${escHtml(data.by || '')}</div>`;
-  card.addEventListener('click', () => { $('#photo-view-img').src = src; $('#photo-info').textContent = `${data.by || ''} · ${data.time || ''}`; $('#modal-photo').classList.add('active'); });
+  card.innerHTML = `<img src="${src}" alt="photo" loading="lazy"><div class="photo-who">${escHtml(data.by || '')}</div><button class="photo-del-btn" title="删除照片">×</button>`;
+  card.addEventListener('click', (e) => {
+    if (e.target.classList.contains('photo-del-btn')) return;
+    $('#photo-view-img').src = src; $('#photo-info').textContent = `${data.by || ''} · ${data.time || ''}`; $('#modal-photo').classList.add('active');
+  });
+  // Delete handler
+  card.querySelector('.photo-del-btn').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (!confirm('确定删除这张照片？')) return;
+    removePhotoLocal(data.id);
+    card.remove();
+    if (socketAvailable && socket) socket.emit('photo-delete', { id: data.id });
+    layoutPhotosInHeart();
+    checkAlbumEmpty();
+  });
   $('#heart-container').appendChild(card);
 }
 
