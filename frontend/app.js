@@ -450,26 +450,19 @@ function tryConnectSocket() {
       addMoodHistory(entry);
       saveMoodLocal(entry);
     });
+    // ===== Data Sync Protocol (client-to-client, no server storage) =====
+    socket.on('sync-request', () => {
+      const data = getLocalRoomData();
+      socket.emit('sync-data', data);
+    });
+    socket.on('sync-data', (incoming) => {
+      mergeRemoteData(incoming);
+    });
+    // Legacy: server room-data (kept for backward compat, but no longer primary data source)
     socket.on('room-data', (data) => {
-      $('#timeline-list').innerHTML = '';
-      $('#heart-container').innerHTML = '';
-      const outlineSVG = `<svg class="heart-outline" viewBox="0 0 512 512" width="420" height="380"><path d="M256 448l-30-30C108 308 32 244 32 168 32 108 80 56 140 56c36 0 70 16 94 44l22 26 22-26c24-28 58-44 94-44 60 0 108 52 108 112 0 76-76 140-194 250z" fill="none" stroke="#f43f5e" stroke-width="4" opacity="0.3"/></svg>`;
-      $('#heart-container').insertAdjacentHTML('beforeend', outlineSVG);
-      $('#note-list').innerHTML = '';
-      $('#wish-list').innerHTML = '';
-      $('#event-list').innerHTML = '';
-      if (data.milestones && data.milestones.length) data.milestones.forEach(ms => addMilestoneCard(ms));
-      else checkTimelineEmpty();
-      if (data.photos && data.photos.length) { data.photos.forEach(p => addPhotoToHeart(p)); setTimeout(layoutPhotosInHeart, 100); }
-      if (data.notes && data.notes.length) data.notes.forEach(n => addNoteCard(n));
-      else checkNoteEmpty();
-      if (data.wishes && data.wishes.length) data.wishes.forEach(w => addWishCard(w));
-      else checkWishEmpty();
-      if (data.events && data.events.length) data.events.forEach(e => addEventCard(e));
-      else checkEventEmpty();
-      if (data.petState) { petState = data.petState; updatePetUI(); }
-      saveLocalRoomData({ milestones: data.milestones || [], notes: data.notes || [], photos: (data.photos || []).map(p => p.src ? p : {...p, src: p.file ? `/uploads/${p.file}` : ''}), petState: data.petState || petState, wishes: data.wishes || [], events: data.events || [], moods: data.moods || [] });
-      renderCalendar();
+      if (!data) return;
+      // Merge instead of overwrite — localStorage is the source of truth
+      mergeRemoteData(data);
     });
     socket.on('connect_error', () => {
       socketAvailable = false;
@@ -494,6 +487,63 @@ function saveWishToggleLocal(id, done) { const data = getLocalRoomData(); const 
 function saveEventLocal(e) { const data = getLocalRoomData(); if (!data.events.find(x => x.id === e.id)) { data.events.push(e); saveLocalRoomData(data); } }
 function removeEventLocal(id) { const data = getLocalRoomData(); data.events = data.events.filter(x => x.id !== id); saveLocalRoomData(data); }
 function savePetLocal() { const data = getLocalRoomData(); data.petState = {...petState}; saveLocalRoomData(data); }
+
+// Merge remote data (from partner's localStorage) with ours — union by ID
+function mergeRemoteData(incoming) {
+  if (!incoming) return;
+  const local = getLocalRoomData();
+  let changed = false;
+
+  // Merge milestones (by id)
+  if (incoming.milestones && incoming.milestones.length) {
+    const ids = new Set(local.milestones.map(m => m.id));
+    incoming.milestones.forEach(m => { if (!ids.has(m.id)) { local.milestones.push(m); addMilestoneCard(m); changed = true; } });
+  }
+  // Merge notes (by id)
+  if (incoming.notes && incoming.notes.length) {
+    const ids = new Set(local.notes.map(n => n.id));
+    incoming.notes.forEach(n => { if (!ids.has(n.id)) { local.notes.push(n); addNoteCard(n); changed = true; } });
+  }
+  // Merge photos (by id)
+  if (incoming.photos && incoming.photos.length) {
+    const ids = new Set(local.photos.map(p => p.id));
+    incoming.photos.forEach(p => { if (!ids.has(p.id)) { local.photos.push(p); addPhotoToHeart(p); changed = true; } });
+    if (changed) { setTimeout(layoutPhotosInHeart, 100); checkTimelineEmpty(); checkNoteEmpty(); }
+  }
+  // Merge wishes (by id)
+  if (incoming.wishes && incoming.wishes.length) {
+    const ids = new Set(local.wishes.map(w => w.id));
+    incoming.wishes.forEach(w => { if (!ids.has(w.id)) { local.wishes.push(w); addWishCard(w); changed = true; } });
+  }
+  // Merge events (by id)
+  if (incoming.events && incoming.events.length) {
+    const ids = new Set(local.events.map(e => e.id));
+    incoming.events.forEach(e => { if (!ids.has(e.id)) { local.events.push(e); addEventCard(e); changed = true; } });
+  }
+  // Merge moods (by id)
+  if (incoming.moods && incoming.moods.length) {
+    const ids = new Set(local.moods.map(m => m.id));
+    incoming.moods.forEach(m => { if (!ids.has(m.id)) { local.moods.unshift(m); addMoodHistory(m); changed = true; } });
+    if (local.moods.length > 50) local.moods = local.moods.slice(0, 50);
+  }
+  // Pet state: prefer the one with higher overall stats
+  if (incoming.petState) {
+    const incAvg = (incoming.petState.hunger + incoming.petState.happy + incoming.petState.energy) / 3;
+    const locAvg = (local.petState.hunger + local.petState.happy + local.petState.energy) / 3;
+    if (incAvg > locAvg) { local.petState = incoming.petState; petState = incoming.petState; updatePetUI(); changed = true; }
+  }
+
+  if (changed) {
+    saveLocalRoomData(local);
+    renderCalendar();
+  }
+
+  // Restore moods
+  const myMoodEntry = local.moods && local.moods.find(m => m.by === myName);
+  if (myMoodEntry) { myMood = myMoodEntry.value; updateMyMoodDisplay(myMood, false); }
+  const partnerMoodEntry = local.moods && local.moods.find(m => m.by !== myName);
+  if (partnerMoodEntry) { partnerMood = partnerMoodEntry.value; updatePartnerMoodDisplay(partnerMood, false); }
+}
 
 // ===================== Init =====================
 function init() {
@@ -556,7 +606,11 @@ function enterMainScreen() {
   $('#partner-names').textContent = `${myName} & ${partnerName}`;
   if (soloMode) { $('#solo-banner').style.display = 'flex'; $('#mode-badge').textContent = '体验模式'; $('#mode-badge').className = 'mode-badge solo'; }
   else { $('#solo-banner').style.display = 'none'; $('#mode-badge').textContent = '\u{1F512} 端到端加密'; $('#mode-badge').className = 'mode-badge'; }
-  if (socketAvailable && socket && !soloMode && partnerName !== '(等待TA)') socket.emit('join-room', { name: myName, partnerName });
+  if (socketAvailable && socket && !soloMode && partnerName !== '(等待TA)') {
+    socket.emit('join-room', { name: myName, partnerName });
+    // Request sync from partner after joining room
+    setTimeout(() => socket.emit('sync-request', {}), 1000);
+  }
   renderCalendar();
 }
 
@@ -617,6 +671,7 @@ function uploadPhoto(file) {
   reader.onload = (e) => {
     const data = { id: uid(), src: e.target.result, by: myName, time: new Date().toLocaleString('zh-CN') };
     addPhotoToHeart(data); layoutPhotosInHeart(); savePhotoLocal(data);
+    // Send base64 directly to partner (server just relays, no file storage)
     if (socketAvailable && socket) socket.emit('photo-upload', data);
   };
   reader.readAsDataURL(file);
@@ -624,7 +679,8 @@ function uploadPhoto(file) {
 function addPhotoToHeart(data) {
   const emptyMsg = $('#photo-empty-msg'); if (emptyMsg) emptyMsg.style.display = 'none';
   if (document.querySelector(`.photo-heart-item[data-id="${data.id}"]`)) return;
-  const src = data.src || (data.file ? `/uploads/${data.file}` : '');
+  // Use base64 src directly (from localStorage, no server file dependency)
+  const src = data.src || '';
   if (!src) return;
   const card = document.createElement('div');
   card.className = 'photo-heart-item'; card.dataset.id = data.id;
