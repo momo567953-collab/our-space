@@ -628,8 +628,8 @@ function bindAllEvents() {
   bindMoodEvents();
   bindModalEvents();
   bindExportImport();
-  bindPhotoLibAndHeart();
-  bindTravelEvents();
+  try { bindPhotoLibAndHeart(); } catch(e) { console.warn('Photo lib init:', e.message); }
+  try { bindTravelEvents(); } catch(e) { console.warn('Travel init:', e.message); }
 }
 
 // ===================== Main Screen =====================
