@@ -105,7 +105,6 @@ function layoutPhotosInHeart() {
   const ox = cW / 2, oy = cH / 2 - 10;
   const n = photos.length;
   const sizes = [56,62,68,73,78,58,64,70,76,82,55,66,72,60,74,80];
-  const sizes = [56,62,68,73,78,58,64,70,76,82,55,66,72,60,74,80];
   if (n <= 14) {
     const step = (2*Math.PI) / n;
     for (let i = 0; i < n; i++) {
