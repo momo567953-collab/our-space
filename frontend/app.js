@@ -477,8 +477,21 @@ function tryConnectSocket() {
     // Legacy: server room-data (kept for backward compat, but no longer primary data source)
     socket.on('room-data', (data) => {
       if (!data) return;
-      // Merge instead of overwrite — localStorage is the source of truth
       mergeRemoteData(data);
+      // Travel is not merged by mergeRemoteData — request dedicated sync
+      if (data.travel && data.travel.length) {
+        mergeTravelData(data.travel);
+      }
+    });
+    // Dedicated travel bulk sync
+    socket.on('travel-sync', (travelData) => {
+      if (travelData && travelData.length) mergeTravelData(travelData);
+      if ($('#tab-travel').classList.contains('active')) renderTravelMap();
+    });
+    // Sender: respond to travel-sync-request
+    socket.on('travel-sync-request', () => {
+      const data = getLocalRoomData();
+      socket.emit('travel-sync', data.travel || []);
     });
     socket.on('connect_error', () => {
       socketAvailable = false;
@@ -548,17 +561,8 @@ function mergeRemoteData(incoming) {
     incoming.moods.forEach(m => { if (!ids.has(m.id)) { local.moods.unshift(m); addMoodHistory(m); changed = true; } });
     if (local.moods.length > 50) local.moods = local.moods.slice(0, 50);
   }
-  // Merge travel (by id) — also dedup local after merge
-  if (incoming.travel && incoming.travel.length) {
-    if (!local.travel) local.travel = [];
-    const localIds = new Set(local.travel.map(r => r.id));
-    incoming.travel.forEach(r => {
-      if (!localIds.has(r.id)) { local.travel.push(r); localIds.add(r.id); changed = true; }
-    });
-    // Final dedup pass
-    const seen = new Set();
-    local.travel = local.travel.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
-  }
+  // Merge travel — skip if we already have records to avoid race with travel-update
+  // Travel sync is handled by dedicated travel-sync event on initial join
   // Pet state: prefer the one with higher overall stats
   if (incoming.petState) {
     const incAvg = (incoming.petState.hunger + incoming.petState.happy + incoming.petState.energy) / 3;
@@ -653,7 +657,7 @@ function enterMainScreen() {
   if (socketAvailable && socket && !soloMode && partnerName !== '(等待TA)') {
     socket.emit('join-room', { name: myName, partnerName });
     // Request sync from partner after joining room
-    setTimeout(() => socket.emit('sync-request', {}), 1000);
+    setTimeout(() => { socket.emit('sync-request', {}); socket.emit('travel-sync-request', {}); }, 1000);
   }
   renderCalendar();
 }
@@ -1265,6 +1269,20 @@ function removeTravelRecord(id) {
 function getTravelRecords() {
   const data = getLocalRoomData();
   return data.travel || [];
+}
+function mergeTravelData(incoming) {
+  const data = getLocalRoomData();
+  if (!data.travel) data.travel = [];
+  let changed = false;
+  const existing = new Set(data.travel.map(r => r.id));
+  incoming.forEach(r => {
+    if (!existing.has(r.id)) {
+      data.travel.push(r);
+      existing.add(r.id);
+      changed = true;
+    }
+  });
+  if (changed) saveLocalRoomData(data);
 }
 
 function renderTravelMap() {

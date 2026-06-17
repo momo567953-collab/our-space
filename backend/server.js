@@ -164,6 +164,18 @@ io.on('connection', (socket) => {
     socket.to(roomKey).emit('travel-update', data);
   });
 
+  socket.on('travel-sync-request', () => {
+    const { roomKey } = socket.data || {};
+    if (!roomKey) return;
+    socket.to(roomKey).emit('travel-sync-request');
+  });
+
+  socket.on('travel-sync', (data) => {
+    const { roomKey } = socket.data || {};
+    if (!roomKey) return;
+    socket.to(roomKey).emit('travel-sync', data);
+  });
+
   socket.on('note-add', (data) => {
     const { roomKey } = socket.data || {};
     if (!roomKey) return;
