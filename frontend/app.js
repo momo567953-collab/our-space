@@ -1460,8 +1460,13 @@ function bindTravelEvents() {
 
 // ===================== Photo Library + Heart Wall =====================
 function bindPhotoLibAndHeart() {
-  // Show photo lib toggle view
-  $('#tab-album').querySelector('.section-header').insertAdjacentHTML('afterend', `
+  const tabAlbum = $('#tab-album');
+  const sectionHeader = tabAlbum ? tabAlbum.querySelector('.section-header') : null;
+  if (!tabAlbum || !sectionHeader) return;  // Not on main screen yet
+
+  // Only insert toggle UI once
+  if ($('#btn-view-heart')) return;
+  sectionHeader.insertAdjacentHTML('afterend', `
     <div class="photo-lib-toggle">
       <button class="active" id="btn-view-heart">❤ 爱心墙</button>
       <button id="btn-view-lib">📁 照片库</button>
@@ -1474,7 +1479,7 @@ function bindPhotoLibAndHeart() {
     $('#btn-view-lib').classList.remove('active');
     $('#heart-photo-wall').style.display = 'block';
     $('#photo-lib-grid').style.display = 'none';
-    $('#photo-empty-msg').style.display = 'none';
+    const emptyMsg = $('#photo-empty-msg'); if (emptyMsg) emptyMsg.style.display = 'none';
     renderHeartWall();
     setTimeout(layoutPhotosInHeart, 50);
   });
@@ -1511,7 +1516,8 @@ function renderPhotoLibrary() {
   if (photos.length === 0) { grid.innerHTML = '<div class="photo-lib-empty">还没有照片，点击上方上传吧</div>'; return; }
   photos.forEach(p => {
     const item = document.createElement('div');
-    item.className = 'photo-lib-item' + (p.onWall ? ' selected' : '');
+    const isOnWall = p.onWall !== undefined ? p.onWall : photos.length <= 9;
+    item.className = 'photo-lib-item' + (isOnWall ? ' selected' : '');
     item.innerHTML = `<img src="${p.src}" alt=""><button class="lib-delete">×</button>`;
     // Toggle on wall
     item.addEventListener('click', (ev) => {
@@ -1545,7 +1551,14 @@ function renderHeartWall() {
   const outlineSVG = `<svg class="heart-outline" viewBox="0 0 512 512" width="420" height="380"><path d="M256 448l-30-30C108 308 32 244 32 168 32 108 80 56 140 56c36 0 70 16 94 44l22 26 22-26c24-28 58-44 94-44 60 0 108 52 108 112 0 76-76 140-194 250z" fill="none" stroke="#f43f5e" stroke-width="4" opacity="0.3"/></svg>`;
   container.insertAdjacentHTML('beforeend', outlineSVG);
   const data = getLocalRoomData();
-  const wallPhotos = (data.photos || []).filter(p => p.onWall);
+  // Migration: old photos without onWall property default to onWall=true if <=9 total
+  const allPhotos = data.photos || [];
+  const needsMigration = allPhotos.some(p => p.onWall === undefined);
+  if (needsMigration && allPhotos.length <= 9) {
+    allPhotos.forEach(p => { if (p.onWall === undefined) p.onWall = true; });
+    saveLocalRoomData(data);
+  }
+  const wallPhotos = allPhotos.filter(p => p.onWall);
   const emptyMsg = $('#photo-empty-msg');
   if (emptyMsg) emptyMsg.style.display = wallPhotos.length === 0 ? 'block' : 'none';
   wallPhotos.forEach(p => {
