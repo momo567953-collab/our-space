@@ -135,7 +135,7 @@ function layoutPhotosInHeart() {
 // ===================== Local Storage =====================
 function localRoomKey() { return 'our_space_room_' + (roomKey || getRoomKey(myName, partnerName || '(等待TA)')); }
 function getLocalRoomData() {
-  try { return JSON.parse(localStorage.getItem(localRoomKey())) || { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [] }; } catch(e) { return { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [] }; }
+  try { return JSON.parse(localStorage.getItem(localRoomKey())) || { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [], travelCheckins: [] }; } catch(e) { return { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [], travelCheckins: [] }; }
 }
 function saveLocalRoomData(data) { try { localStorage.setItem(localRoomKey(), JSON.stringify(data)); } catch(e) { console.warn('localStorage full'); } }
 
@@ -430,7 +430,12 @@ function tryConnectSocket() {
       loadFromLocal(); enterMainScreen();
     });
     socket.on('pair-error', (data) => msg($('#pair-msg'), data.msg, 'err'));
-    socket.on('photo-new', (data) => { addPhotoToHeart(data); layoutPhotosInHeart(); savePhotoLocal(data); });
+    socket.on('photo-new', (data) => {
+      savePhotoLocal(data);
+      // Refresh views if visible
+      if ($('#photo-lib-grid') && $('#photo-lib-grid').style.display !== 'none') renderPhotoLibrary();
+      if ($('#heart-photo-wall') && $('#heart-photo-wall').style.display !== 'none') { renderHeartWall(); setTimeout(layoutPhotosInHeart, 50); }
+    });
     socket.on('note-new', (data) => { addNoteCard(data); saveNoteLocal(data); });
     socket.on('milestone-new', (data) => { addMilestoneCard(data); saveMilestoneLocal(data); });
     socket.on('milestone-delete', (data) => { const el = document.querySelector(`.milestone-card[data-id="${data.id}"]`); if (el) el.remove(); checkTimelineEmpty(); removeMilestoneLocal(data.id); });
@@ -524,8 +529,8 @@ function mergeRemoteData(incoming) {
   // Merge photos (by id)
   if (incoming.photos && incoming.photos.length) {
     const ids = new Set(local.photos.map(p => p.id));
-    incoming.photos.forEach(p => { if (!ids.has(p.id)) { local.photos.push(p); addPhotoToHeart(p); changed = true; } });
-    if (changed) { setTimeout(layoutPhotosInHeart, 100); checkTimelineEmpty(); checkNoteEmpty(); }
+    incoming.photos.forEach(p => { if (!ids.has(p.id)) { local.photos.push(p); changed = true; } });
+    if (changed) { renderHeartWall(); setTimeout(layoutPhotosInHeart, 100); }
   }
   // Merge wishes (by id)
   if (incoming.wishes && incoming.wishes.length) {
@@ -548,6 +553,12 @@ function mergeRemoteData(incoming) {
     const incAvg = (incoming.petState.hunger + incoming.petState.happy + incoming.petState.energy) / 3;
     const locAvg = (local.petState.hunger + local.petState.happy + local.petState.energy) / 3;
     if (incAvg > locAvg) { local.petState = incoming.petState; petState = incoming.petState; updatePetUI(); changed = true; }
+  }
+  // Merge travel checkins (by id)
+  if (incoming.travelCheckins && incoming.travelCheckins.length) {
+    if (!local.travelCheckins) local.travelCheckins = [];
+    const ids = new Set(local.travelCheckins.map(c => c.id));
+    incoming.travelCheckins.forEach(c => { if (!ids.has(c.id)) { local.travelCheckins.push(c); changed = true; } });
   }
 
   if (changed) {
@@ -586,12 +597,13 @@ function init() {
 function loadFromLocal() {
   const data = getLocalRoomData();
   if (data.milestones && data.milestones.length) { const empty = document.querySelector('#timeline-list .empty-state'); if (empty) empty.remove(); data.milestones.forEach(ms => addMilestoneCard(ms)); } else { checkTimelineEmpty(); }
-  if (data.photos && data.photos.length) { const empty = $('#photo-empty-msg'); if (empty) empty.style.display = 'none'; data.photos.forEach(p => addPhotoToHeart(p)); setTimeout(layoutPhotosInHeart, 100); }
+  if (data.photos && data.photos.length) { const empty = $('#photo-empty-msg'); if (empty) empty.style.display = 'none'; renderHeartWall(); setTimeout(layoutPhotosInHeart, 100); }
   if (data.notes && data.notes.length) { const empty = document.querySelector('#note-list .empty-state'); if (empty) empty.remove(); data.notes.forEach(n => addNoteCard(n)); } else { checkNoteEmpty(); }
   if (data.wishes && data.wishes.length) { data.wishes.forEach(w => addWishCard(w)); } else { checkWishEmpty(); }
   if (data.events && data.events.length) { data.events.forEach(e => addEventCard(e)); } else { checkEventEmpty(); }
   if (data.petState) { petState = data.petState; updatePetUI(); }
   if (data.moods && data.moods.length) { data.moods.slice(0, 50).forEach(m => addMoodHistory(m)); }
+  if (data.travelCheckins && data.travelCheckins.length) { travelCheckins = data.travelCheckins; }
   renderCalendar();
   // Restore moods from data
   const myMoodEntry = data.moods && data.moods.find(m => m.by === myName);
@@ -648,7 +660,8 @@ function bindTabEvents() {
   $$('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       showTab('tab-' + tab.dataset.tab);
-      if (tab.dataset.tab === 'album') setTimeout(layoutPhotosInHeart, 50);
+      if (tab.dataset.tab === 'album') setTimeout(() => { if ($('#heart-photo-wall').style.display !== 'none') layoutPhotosInHeart(); }, 50);
+      if (tab.dataset.tab === 'travel') { renderTravelMap(); $('#travel-detail').style.display = 'none'; $('#travel-map').style.display = 'grid'; currentTravelProvince = null; }
       if (tab.dataset.tab === 'calendar') renderCalendar();
     });
   });
