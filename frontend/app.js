@@ -104,37 +104,22 @@ function layoutPhotosInHeart() {
   const scale = cW / 38;
   const ox = cW / 2, oy = cH / 2 - 10;
   const n = photos.length;
-  const sizes = [56,62,68,73,78,58,64,70,76,82,55,66,72,60,74,80];
-  if (n <= 14) {
-    const step = (2*Math.PI) / n;
-    for (let i = 0; i < n; i++) {
-      const pos = heartCurve(step * i, scale, ox, oy);
-      const sz = sizes[i % sizes.length];
-      const jt = i % 2 ? -4 : 4;
-      photos[i].style.width = sz + 'px'; photos[i].style.height = sz + 'px';
-      photos[i].style.left = (pos.x + jt - sz/2) + 'px';
-      photos[i].style.top = (pos.y + jt - sz/2) + 'px';
-      photos[i].style.transform = `rotate(${(i*19)%14-7}deg)`;
-    }
-  } else {
-    for (let i = 0; i < n; i++) {
-      const t = i * (2*Math.PI) / Math.min(n, 16);
-      const r = i < 16 ? 1.0 : 0.2 + Math.random() * 0.6;
-      const pos = heartCurve(t, scale * r, ox, oy);
-      const sz = sizes[i % sizes.length];
-      if (i >= 16) { pos.x += (Math.random()-0.5)*20; pos.y += (Math.random()-0.5)*20; }
-      photos[i].style.width = sz + 'px'; photos[i].style.height = sz + 'px';
-      photos[i].style.left = (pos.x - sz/2) + 'px';
-      photos[i].style.top = (pos.y - sz/2) + 'px';
-      photos[i].style.transform = `rotate(${(i*19)%14-7}deg)`;
-    }
+  const sz = 90; // uniform size, no overlap
+  const step = (2 * Math.PI) / n;
+  for (let i = 0; i < n; i++) {
+    const pos = heartCurve(step * i, scale, ox, oy);
+    photos[i].style.width = sz + 'px';
+    photos[i].style.height = sz + 'px';
+    photos[i].style.left = (pos.x - sz / 2) + 'px';
+    photos[i].style.top = (pos.y - sz / 2) + 'px';
+    photos[i].style.transform = 'none';
   }
 }
 
 // ===================== Local Storage =====================
 function localRoomKey() { return 'our_space_room_' + (roomKey || getRoomKey(myName, partnerName || '(等待TA)')); }
 function getLocalRoomData() {
-  try { return JSON.parse(localStorage.getItem(localRoomKey())) || { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [] }; } catch(e) { return { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [] }; }
+  try { return JSON.parse(localStorage.getItem(localRoomKey())) || { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [], travel: [] }; } catch(e) { return { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [], travel: [] }; }
 }
 function saveLocalRoomData(data) { try { localStorage.setItem(localRoomKey(), JSON.stringify(data)); } catch(e) { console.warn('localStorage full'); } }
 
@@ -299,6 +284,7 @@ function enterSoloMode() {
   localStorage.setItem('our_space_solo', 'true');
   localStorage.setItem('our_space_partner', partnerName);
   roomKey = getRoomKey(myName, partnerName);
+  loadFromLocal();
   enterMainScreen();
 }
 function exitSoloMode(newPartner) {
@@ -437,6 +423,28 @@ function tryConnectSocket() {
       layoutPhotosInHeart();
       checkAlbumEmpty();
     });
+    socket.on('travel-update', (data) => {
+      if (data.action === 'add' && data.record) {
+        saveTravelRecord(data.record);
+        // Refresh if currently viewing the province
+        const backBtn = $('#btn-back-to-map');
+        if (backBtn && backBtn.style.display !== 'none') {
+          const h4 = document.querySelector('#travel-map-view h4');
+          if (h4 && h4.textContent === data.record.province) renderProvinceView(data.record.province);
+        }
+        renderTravelMap();
+      }
+      if (data.action === 'delete') {
+        removeTravelRecord(data.id);
+        const backBtn = $('#btn-back-to-map');
+        if (backBtn && backBtn.style.display !== 'none') {
+          const h4 = document.querySelector('#travel-map-view h4');
+          if (h4) renderProvinceView(h4.textContent);
+        } else {
+          renderTravelMap();
+        }
+      }
+    });
     socket.on('note-new', (data) => { addNoteCard(data); saveNoteLocal(data); });
     socket.on('milestone-new', (data) => { addMilestoneCard(data); saveMilestoneLocal(data); });
     socket.on('milestone-delete', (data) => { const el = document.querySelector(`.milestone-card[data-id="${data.id}"]`); if (el) el.remove(); checkTimelineEmpty(); removeMilestoneLocal(data.id); });
@@ -490,7 +498,7 @@ function checkAlbumEmpty() {
   const emptyMsg = $('#photo-empty-msg');
   if (emptyMsg) emptyMsg.style.display = photos.length === 0 ? 'block' : 'none';
 }
-function removePhotoLocal(id) { const data = getLocalRoomData(); data.photos = data.photos.filter(p => p.id !== id); saveLocalRoomData(data); }
+function updateAlbumHint() {}
 function saveNoteLocal(note) { const data = getLocalRoomData(); if (!data.notes.find(n => n.id === note.id)) { data.notes.push(note); saveLocalRoomData(data); } }
 function removeNoteLocal(id) { const data = getLocalRoomData(); data.notes = data.notes.filter(n => n.id !== id); saveLocalRoomData(data); }
 function saveWishLocal(w) { const data = getLocalRoomData(); if (!data.wishes.find(x => x.id === w.id)) { data.wishes.push(w); saveLocalRoomData(data); } }
@@ -520,7 +528,7 @@ function mergeRemoteData(incoming) {
   if (incoming.photos && incoming.photos.length) {
     const ids = new Set(local.photos.map(p => p.id));
     incoming.photos.forEach(p => { if (!ids.has(p.id)) { local.photos.push(p); addPhotoToHeart(p); changed = true; } });
-    if (changed) { setTimeout(layoutPhotosInHeart, 100); checkTimelineEmpty(); checkNoteEmpty(); }
+    if (changed) setTimeout(layoutPhotosInHeart, 100);
   }
   // Merge wishes (by id)
   if (incoming.wishes && incoming.wishes.length) {
@@ -537,6 +545,12 @@ function mergeRemoteData(incoming) {
     const ids = new Set(local.moods.map(m => m.id));
     incoming.moods.forEach(m => { if (!ids.has(m.id)) { local.moods.unshift(m); addMoodHistory(m); changed = true; } });
     if (local.moods.length > 50) local.moods = local.moods.slice(0, 50);
+  }
+  // Merge travel (by id)
+  if (incoming.travel && incoming.travel.length) {
+    if (!local.travel) local.travel = [];
+    const ids = new Set(local.travel.map(r => r.id));
+    incoming.travel.forEach(r => { if (!ids.has(r.id)) { local.travel.push(r); changed = true; } });
   }
   // Pet state: prefer the one with higher overall stats
   if (incoming.petState) {
@@ -581,7 +595,7 @@ function init() {
 function loadFromLocal() {
   const data = getLocalRoomData();
   if (data.milestones && data.milestones.length) { const empty = document.querySelector('#timeline-list .empty-state'); if (empty) empty.remove(); data.milestones.forEach(ms => addMilestoneCard(ms)); } else { checkTimelineEmpty(); }
-  if (data.photos && data.photos.length) { const empty = $('#photo-empty-msg'); if (empty) empty.style.display = 'none'; data.photos.forEach(p => addPhotoToHeart(p)); setTimeout(layoutPhotosInHeart, 100); }
+  if (data.photos && data.photos.length) { const empty = $('#photo-empty-msg'); if (empty) empty.style.display = 'none'; data.photos.forEach(p => addPhotoToHeart(p)); setTimeout(layoutPhotosInHeart, 100); } else { checkAlbumEmpty(); }
   if (data.notes && data.notes.length) { const empty = document.querySelector('#note-list .empty-state'); if (empty) empty.remove(); data.notes.forEach(n => addNoteCard(n)); } else { checkNoteEmpty(); }
   if (data.wishes && data.wishes.length) { data.wishes.forEach(w => addWishCard(w)); } else { checkWishEmpty(); }
   if (data.events && data.events.length) { data.events.forEach(e => addEventCard(e)); } else { checkEventEmpty(); }
@@ -599,18 +613,19 @@ function loadFromLocal() {
 
 function bindAllEvents() {
   bindAuthEvents();
-  bindLogoutEvents();
-  bindPairEvents();
-  bindTabEvents();
-  bindTimelineEvents();
-  bindAlbumEvents();
-  bindNoteEvents();
-  bindPetEvents();
-  bindWishEvents();
-  bindCalendarEvents();
-  bindMoodEvents();
-  bindModalEvents();
-  bindExportImport();
+    bindLogoutEvents();
+    bindPairEvents();
+    bindTabEvents();
+    bindTimelineEvents();
+    bindAlbumEvents();
+    bindNoteEvents();
+    bindPetEvents();
+    bindWishEvents();
+    bindCalendarEvents();
+    bindMoodEvents();
+    bindTravelEvents();
+    bindModalEvents();
+    bindExportImport();
 }
 
 // ===================== Main Screen =====================
@@ -643,6 +658,7 @@ function bindTabEvents() {
       showTab('tab-' + tab.dataset.tab);
       if (tab.dataset.tab === 'album') setTimeout(layoutPhotosInHeart, 50);
       if (tab.dataset.tab === 'calendar') renderCalendar();
+      if (tab.dataset.tab === 'travel') renderTravelMap();
     });
   });
 }
@@ -693,7 +709,6 @@ function uploadPhoto(file) {
   reader.onload = (e) => {
     const data = { id: uid(), src: e.target.result, by: myName, time: new Date().toLocaleString('zh-CN') };
     addPhotoToHeart(data); layoutPhotosInHeart(); savePhotoLocal(data);
-    // Send base64 directly to partner (server just relays, no file storage)
     if (socketAvailable && socket) socket.emit('photo-upload', data);
   };
   reader.readAsDataURL(file);
@@ -705,12 +720,11 @@ function addPhotoToHeart(data) {
   if (!src) return;
   const card = document.createElement('div');
   card.className = 'photo-heart-item'; card.dataset.id = data.id;
-  card.innerHTML = `<img src="${src}" alt="photo" loading="lazy"><div class="photo-who">${escHtml(data.by || '')}</div><button class="photo-del-btn" title="删除照片">×</button>`;
-  card.addEventListener('click', (e) => {
-    if (e.target.classList.contains('photo-del-btn')) return;
+  card.innerHTML = `<img src="${src}" alt="" loading="lazy"><div class="photo-who">${escHtml(data.by || '')}</div><button class="photo-del-btn" title="删除照片">&times;</button>`;
+  card.addEventListener('click', (ev) => {
+    if (ev.target.classList.contains('photo-del-btn')) return;
     $('#photo-view-img').src = src; $('#photo-info').textContent = `${data.by || ''} · ${data.time || ''}`; $('#modal-photo').classList.add('active');
   });
-  // Delete handler
   card.querySelector('.photo-del-btn').addEventListener('click', (ev) => {
     ev.stopPropagation();
     if (!confirm('确定删除这张照片？')) return;
@@ -1187,7 +1201,241 @@ function saveMoodLocal(entry) {
 }
 
 // ===================== Modals =====================
-// ===================== Export/Import Backup =====================
+// ===================== Travel Check-in =====================
+const provinceData = {
+  '北京': { cities: ['东城区','西城区','朝阳区','海淀区','丰台区','石景山区','通州区','大兴区','顺义区','昌平区','怀柔区','延庆区','密云区','平谷区','门头沟区','房山区'] },
+  '上海': { cities: ['黄浦区','徐汇区','长宁区','静安区','普陀区','虹口区','杨浦区','浦东新区','闵行区','宝山区','嘉定区','金山区','松江区','青浦区','奉贤区','崇明区'] },
+  '天津': { cities: ['和平区','河东区','河西区','南开区','河北区','红桥区','滨海新区','东丽区','西青区','津南区','北辰区','武清区','宝坻区','宁河区','静海区','蓟州区'] },
+  '重庆': { cities: ['渝中区','江北区','沙坪坝区','九龙坡区','南岸区','渝北区','巴南区','万州区','涪陵区','黔江区','长寿区','江津区','合川区','永川区','南川区'] },
+  '河北': { cities: ['石家庄','唐山','秦皇岛','邯郸','邢台','保定','张家口','承德','沧州','廊坊','衡水'] },
+  '山西': { cities: ['太原','大同','阳泉','长治','晋城','朔州','晋中','运城','忻州','临汾','吕梁'] },
+  '内蒙古': { cities: ['呼和浩特','包头','乌海','赤峰','通辽','鄂尔多斯','呼伦贝尔','巴彦淖尔','乌兰察布'] },
+  '辽宁': { cities: ['沈阳','大连','鞍山','抚顺','本溪','丹东','锦州','营口','阜新','辽阳','盘锦','铁岭','朝阳','葫芦岛'] },
+  '吉林': { cities: ['长春','吉林','四平','辽源','通化','白山','松原','白城','延边'] },
+  '黑龙江': { cities: ['哈尔滨','齐齐哈尔','鸡西','鹤岗','双鸭山','大庆','伊春','佳木斯','七台河','牡丹江','黑河'] },
+  '江苏': { cities: ['南京','无锡','徐州','常州','苏州','南通','连云港','淮安','盐城','扬州','镇江','泰州','宿迁'] },
+  '浙江': { cities: ['杭州','宁波','温州','嘉兴','湖州','绍兴','金华','衢州','舟山','台州','丽水'] },
+  '安徽': { cities: ['合肥','芜湖','蚌埠','淮南','马鞍山','淮北','铜陵','安庆','黄山','滁州','阜阳','宿州','六安','亳州','池州','宣城'] },
+  '福建': { cities: ['福州','厦门','莆田','三明','泉州','漳州','南平','龙岩','宁德'] },
+  '江西': { cities: ['南昌','景德镇','萍乡','九江','新余','鹰潭','赣州','吉安','宜春','抚州','上饶'] },
+  '山东': { cities: ['济南','青岛','淄博','枣庄','东营','烟台','潍坊','济宁','泰安','威海','日照','临沂','德州','聊城','滨州','菏泽'] },
+  '河南': { cities: ['郑州','开封','洛阳','平顶山','安阳','鹤壁','新乡','焦作','濮阳','许昌','漯河','三门峡','南阳','商丘','信阳','周口','驻马店'] },
+  '湖北': { cities: ['武汉','黄石','十堰','宜昌','襄阳','鄂州','荆门','孝感','荆州','黄冈','咸宁','随州','恩施'] },
+  '湖南': { cities: ['长沙','株洲','湘潭','衡阳','邵阳','岳阳','常德','张家界','益阳','郴州','永州','怀化','娄底','湘西'] },
+  '广东': { cities: ['广州','韶关','深圳','珠海','汕头','佛山','江门','湛江','茂名','肇庆','惠州','梅州','汕尾','河源','阳江','清远','东莞','中山','潮州','揭阳','云浮'] },
+  '广西': { cities: ['南宁','柳州','桂林','梧州','北海','防城港','钦州','贵港','玉林','百色','贺州','河池','来宾','崇左'] },
+  '海南': { cities: ['海口','三亚','三沙','儋州'] },
+  '四川': { cities: ['成都','自贡','攀枝花','泸州','德阳','绵阳','广元','遂宁','内江','乐山','南充','眉山','宜宾','广安','达州','雅安','巴中','资阳','阿坝','甘孜','凉山'] },
+  '贵州': { cities: ['贵阳','六盘水','遵义','安顺','毕节','铜仁','黔西南','黔东南','黔南'] },
+  '云南': { cities: ['昆明','曲靖','玉溪','保山','昭通','丽江','普洱','临沧','楚雄','红河','文山','西双版纳','大理','德宏','怒江','迪庆'] },
+  '西藏': { cities: ['拉萨','日喀则','昌都','林芝','山南','那曲','阿里'] },
+  '陕西': { cities: ['西安','铜川','宝鸡','咸阳','渭南','延安','汉中','榆林','安康','商洛'] },
+  '甘肃': { cities: ['兰州','嘉峪关','金昌','白银','天水','武威','张掖','平凉','酒泉','庆阳','定西','陇南','临夏','甘南'] },
+  '青海': { cities: ['西宁','海东','海北','黄南','海南州','果洛','玉树','海西'] },
+  '宁夏': { cities: ['银川','石嘴山','吴忠','固原','中卫'] },
+  '新疆': { cities: ['乌鲁木齐','克拉玛依','吐鲁番','哈密','昌吉','博尔塔拉','巴音郭楞','阿克苏','克孜勒苏','喀什','和田','伊犁','塔城','阿勒泰'] },
+  '台湾': { cities: ['台北','高雄','台中','台南','基隆','新竹','嘉义'] },
+  '香港': { cities: ['中西区','湾仔区','东区','南区','油尖旺区','深水埗区','九龙城区','黄大仙区','观塘区','荃湾区','屯门区','元朗区','北区','大埔区','沙田区','西贡区','离岛区'] },
+  '澳门': { cities: ['花地玛堂区','圣安多尼堂区','大堂区','望德堂区','风顺堂区'] }
+};
+
+function saveTravelRecord(r) {
+  const data = getLocalRoomData();
+  if (!data.travel) data.travel = [];
+  data.travel.push(r);
+  saveLocalRoomData(data);
+}
+function removeTravelRecord(id) {
+  const data = getLocalRoomData();
+  if (!data.travel) return;
+  data.travel = data.travel.filter(r => r.id !== id);
+  saveLocalRoomData(data);
+}
+function getTravelRecords() {
+  const data = getLocalRoomData();
+  return data.travel || [];
+}
+
+function renderTravelMap() {
+  const view = $('#travel-map-view');
+  if (!view) return;
+  const records = getTravelRecords();
+  const litProvinces = new Set(records.map(r => r.province));
+  view.innerHTML = travelMapSVG(litProvinces);
+  $('#btn-back-to-map').style.display = 'none';
+}
+
+function travelMapSVG(litProvinces) {
+  // Map GeoJSON full names to our short names
+  const geoToShort = {
+    '北京市':'北京','天津市':'天津','河北省':'河北','山西省':'山西','内蒙古自治区':'内蒙古',
+    '辽宁省':'辽宁','吉林省':'吉林','黑龙江省':'黑龙江','上海市':'上海',
+    '江苏省':'江苏','浙江省':'浙江','安徽省':'安徽','福建省':'福建','江西省':'江西',
+    '山东省':'山东','河南省':'河南','湖北省':'湖北','湖南省':'湖南','广东省':'广东',
+    '广西壮族自治区':'广西','海南省':'海南','重庆市':'重庆','四川省':'四川',
+    '贵州省':'贵州','云南省':'云南','西藏自治区':'西藏','陕西省':'陕西',
+    '甘肃省':'甘肃','青海省':'青海','宁夏回族自治区':'宁夏','新疆维吾尔自治区':'新疆',
+    '香港特别行政区':'香港','澳门特别行政区':'澳门','台湾省':'台湾'
+  };
+  let paths = '';
+  Object.keys(CHINA_MAP_PATHS).forEach(geoName => {
+    const shortName = geoToShort[geoName] || geoName;
+    const d = CHINA_MAP_PATHS[geoName];
+    if (!d) return;
+    const lit = litProvinces.has(shortName);
+    const fill = lit ? '#f43f5e' : '#e5e7eb';
+    const stroke = lit ? '#e11d48' : '#d1d5db';
+    paths += `<path class="prov" d="${d}" fill="${fill}" stroke="${stroke}" onclick="window._openProvince('${shortName}')"><title>${shortName}</title></path>\n`;
+  });
+  // South China Sea inset — below mainland
+  paths += '<rect x="460" y="485" width="130" height="85" fill="#f0f0f0" stroke="#d1d5db" stroke-width="1" rx="3"/>'+
+    '<text x="525" y="510" font-size="9" fill="#9ca3af" text-anchor="middle" font-weight="600">南海诸岛</text>'+
+    '<text x="525" y="555" font-size="7" fill="#b0b7c3" text-anchor="middle">(示意)</text>';
+  return '<svg viewBox="0 0 600 580" style="width:100%;max-width:720px;display:block;margin:0 auto;">'+
+`<style>.prov{stroke-width:1;cursor:pointer;transition:fill 0.2s}.prov:hover{fill:#fbcfe8!important;stroke:#f43f5e}</style>`+
+`${paths}`+
+`</svg>`;
+}
+
+function renderProvinceView(province) {
+  const view = $('#travel-map-view');
+  if (!view) return;
+  const records = getTravelRecords();
+  const provRecords = records.filter(r => r.province === province);
+  const litCities = new Set(provRecords.map(r => r.city));
+  let html = '';
+  // Province SVG map — zoomed to fit
+  const cities = PREFECTURE_MAP[province];
+  if (cities) {
+    const cityNameMap = {};
+    if (provinceData[province]) {
+      provinceData[province].cities.forEach(cn => {
+        Object.keys(cities).forEach(gn => {
+          if (gn.startsWith(cn)) cityNameMap[cn] = gn;
+        });
+      });
+    }
+    // Compute bounding box of all paths
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    Object.values(cities).forEach(d => {
+      const nums = d.match(/[\d.]+/g);
+      if (!nums) return;
+      for (let i = 0; i < nums.length - 1; i += 2) {
+        const x = parseFloat(nums[i]), y = parseFloat(nums[i + 1]);
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    });
+    const pad = 20;
+    minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+    maxX = Math.min(600, maxX + pad); maxY = Math.min(580, maxY + pad);
+    html += '<svg viewBox="' + minX + ' ' + minY + ' ' + (maxX - minX) + ' ' + (maxY - minY) + '" style="width:100%;max-width:650px;display:block;margin:0 auto 0.5rem;">'+
+'<style>.pref{stroke:#fff;stroke-width:0.8;cursor:pointer}.pref:hover{fill:#fbcfe8!important}</style>';
+    Object.keys(cities).forEach(geoCityName => {
+      let shortName = null;
+      for (const [sn, gn] of Object.entries(cityNameMap)) {
+        if (gn === geoCityName) { shortName = sn; break; }
+      }
+      const d = cities[geoCityName];
+      if (!d) return;
+      const lit = shortName && litCities.has(shortName);
+      const fill = lit ? '#f43f5e' : '#e5e7eb';
+      const title = shortName || geoCityName;
+      html += `<path class="pref" d="${d}" fill="${fill}" onclick="window._openCity('${province}','${title}')"><title>${title}</title></path>\n`;
+    });
+    html += '</svg>';
+  }
+  // City name list below the map
+  html += `<h4 style="margin-bottom:0.5rem;">${province}</h4>`;
+  if (provinceData[province]) {
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:1rem;">';
+    provinceData[province].cities.forEach(city => {
+      const lit = litCities.has(city) ? 'background:#f43f5e;color:#fff;' : 'background:var(--surface);border:1px solid var(--border);color:var(--text2);';
+      html += `<span style="padding:4px 10px;border-radius:12px;font-size:0.78rem;cursor:pointer;${lit}" onclick="window._openCity('${province}','${city}')">${city}</span>`;
+    });
+    html += '</div>';
+  }
+  // Records section
+  html += `<div id="travel-records"><h5>${province} 的打卡记录</h5>`;
+  if (provRecords.length === 0) {
+    html += '<p style="color:var(--text3);font-size:0.85rem;">暂无打卡记录，点击地图上的城市添加</p>';
+  } else {
+    provRecords.forEach(r => { html += travelRecordHTML(r); });
+  }
+  html += '</div>';
+  view.innerHTML = html;
+  $('#btn-back-to-map').style.display = 'inline-flex';
+}
+
+function travelRecordHTML(r) {
+  let imgHTML = r.photo ? `<img src="${r.photo}" alt="" loading="lazy">` : '';
+  return `<div class="travel-record" data-id="${r.id}">
+    <div class="rec-header"><span class="rec-city">${r.province} · ${r.city}</span><span class="rec-time">${r.time}</span></div>
+    <div class="rec-spot">📌 ${escHtml(r.spot)}</div>${imgHTML}
+    <button class="rec-del" onclick="window._delTravel('${r.id}');return false;">×</button>
+  </div>`;
+}
+
+window._openProvince = function(province) { renderProvinceView(province); };
+window._openCity = function(province, city) { showTravelModal(province, city); };
+window._delTravel = function(id) {
+  if (!confirm('确定删除这条打卡记录？')) return;
+  removeTravelRecord(id);
+  // Re-render current view
+  const backBtn = $('#btn-back-to-map');
+  if (backBtn.style.display !== 'none') {
+    // Province view
+    const h4 = document.querySelector('#travel-map-view h4');
+    if (h4) renderProvinceView(h4.textContent);
+  } else {
+    renderTravelMap();
+  }
+  if (socketAvailable && socket) socket.emit('travel-update', { id: id, action: 'delete' });
+};
+
+function showTravelModal(province, city) {
+  const modal = document.createElement('div');
+  modal.className = 'modal active';
+  modal.innerHTML = `<div class="modal-content" style="max-width:380px;">
+    <h3>${province} · ${city}</h3>
+    <div class="form-group"><label>景点</label><input type="text" id="travel-spot" placeholder="例如：故宫"></div>
+    <div class="form-group"><label>日期</label><input type="date" id="travel-date"></div>
+    <div class="form-group"><label>照片（可选）</label><input type="file" id="travel-photo" accept="image/*"></div>
+    <div class="modal-actions" style="margin-top:1rem;">
+      <button class="btn-ghost" id="btn-cancel-travel">取消</button>
+      <button class="btn-primary" id="btn-save-travel">保存打卡</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  $('#travel-date').value = new Date().toISOString().split('T')[0];
+  let photoData = '';
+  $('#travel-photo').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev) { photoData = ev.target.result; };
+    reader.readAsDataURL(file);
+  });
+  $('#btn-cancel-travel').addEventListener('click', () => modal.remove());
+  $('#btn-save-travel').addEventListener('click', () => {
+    const spot = $('#travel-spot').value.trim();
+    const date = $('#travel-date').value;
+    if (!spot || !date) { alert('请填写景点和日期'); return; }
+    const record = {
+      id: uid(), province, city, spot, time: formatDate(date),
+      photo: photoData, by: myName
+    };
+    saveTravelRecord(record);
+    modal.remove();
+    renderProvinceView(province);
+    if (socketAvailable && socket) socket.emit('travel-update', { record, action: 'add' });
+  });
+}
+
+function bindTravelEvents() {
+  $('#btn-back-to-map').addEventListener('click', () => renderTravelMap());
+}
 function bindExportImport() {
   $('#btn-export-data').addEventListener('click', () => {
     const data = getLocalRoomData();

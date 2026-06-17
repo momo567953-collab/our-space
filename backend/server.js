@@ -158,6 +158,12 @@ io.on('connection', (socket) => {
     socket.to(roomKey).emit('photo-delete', data);
   });
 
+  socket.on('travel-update', (data) => {
+    const { roomKey } = socket.data || {};
+    if (!roomKey) return;
+    socket.to(roomKey).emit('travel-update', data);
+  });
+
   socket.on('note-add', (data) => {
     const { roomKey } = socket.data || {};
     if (!roomKey) return;

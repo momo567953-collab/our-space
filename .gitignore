@@ -2,3 +2,10 @@ node_modules/
 backend/data/
 backend/uploads/
 .DS_Store
+
+# Map build artifacts
+frontend/provinces.json
+frontend/provinces2.json
+frontend/prefectures.json
+frontend/gen_map.py
+frontend/gen_prefecture.py
