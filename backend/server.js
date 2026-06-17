@@ -118,20 +118,16 @@ io.on('connection', (socket) => {
 
   // ----- Join Room -----
   socket.on('join-room', async (data) => {
-    try {
-      const { name, partnerName } = data;
-      const roomKey = [name, partnerName].sort().join('__');
-      socket.join(roomKey);
-      socket.data.roomKey = roomKey;
+    const { name, partnerName } = data;
+    const roomKey = [name, partnerName].sort().join('__');
+    socket.join(roomKey);
+    socket.data.roomKey = roomKey;
 
-      // If cached data exists and no partner is online, send cache as fallback
-      const sockets = await io.in(roomKey).fetchSockets();
-      const othersInRoom = sockets.filter(s => s.id !== socket.id);
-      if (othersInRoom.length === 0 && roomCache[roomKey]) {
-        socket.emit('sync-data', roomCache[roomKey].data);
-      }
-    } catch(e) {
-      console.error('join-room error:', e.message);
+    // If cached data exists and no partner is online, send cache as fallback
+    const sockets = await io.in(roomKey).fetchSockets();
+    const othersInRoom = sockets.filter(s => s.id !== socket.id);
+    if (othersInRoom.length === 0 && roomCache[roomKey]) {
+      socket.emit('sync-data', roomCache[roomKey].data);
     }
   });
 
@@ -214,25 +210,6 @@ io.on('connection', (socket) => {
     const { roomKey } = socket.data || {};
     if (!roomKey) return;
     socket.to(roomKey).emit('mood-update', data);
-  });
-
-  // Travel check-in relay
-  socket.on('checkin-add', (data) => {
-    const { roomKey } = socket.data || {};
-    if (!roomKey) return;
-    socket.to(roomKey).emit('checkin-add', data);
-  });
-  socket.on('checkin-delete', (data) => {
-    const { roomKey } = socket.data || {};
-    if (!roomKey) return;
-    socket.to(roomKey).emit('checkin-delete', data);
-  });
-
-  // Photo delete relay
-  socket.on('photo-delete', (data) => {
-    const { roomKey } = socket.data || {};
-    if (!roomKey) return;
-    socket.to(roomKey).emit('photo-delete', data);
   });
 
   // ----- Data sync between clients -----
