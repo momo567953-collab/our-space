@@ -63,7 +63,11 @@ app.post('/api/create-pair', (req, res) => {
   res.json({ success: true, partnerName: pair.user1 === myName ? pair.user2 : pair.user1 });
 });
 
-// ===== Socket.io (Pure Relay - no data storage) =====
+// ===== Socket.io (Pure Relay + In-memory cache for recovery) =====
+// Room data cached in memory (not disk). Lost on redeploy, but at least one client
+// typically reconnects and re-populates it. Acts as bridge when partner is offline.
+
+const roomCache = {};  // roomKey -> { data, lastUpdate }
 
 io.on('connection', (socket) => {
   console.log(`Connected: ${socket.id}`);
@@ -113,12 +117,18 @@ io.on('connection', (socket) => {
   });
 
   // ----- Join Room -----
-  socket.on('join-room', (data) => {
+  socket.on('join-room', async (data) => {
     const { name, partnerName } = data;
     const roomKey = [name, partnerName].sort().join('__');
     socket.join(roomKey);
     socket.data.roomKey = roomKey;
-    // Server doesn't send data — clients sync from localStorage
+
+    // If cached data exists and no partner is online, send cache as fallback
+    const sockets = await io.in(roomKey).fetchSockets();
+    const othersInRoom = sockets.filter(s => s.id !== socket.id);
+    if (othersInRoom.length === 0 && roomCache[roomKey]) {
+      socket.emit('sync-data', roomCache[roomKey].data);
+    }
   });
 
   // ----- ALL data events: pure relay, no server storage -----
@@ -210,10 +220,12 @@ io.on('connection', (socket) => {
     socket.to(roomKey).emit('sync-request', data);
   });
 
-  socket.on('sync-data', (data) => {
+  socket.on('sync-data', (incoming) => {
     const { roomKey } = socket.data || {};
     if (!roomKey) return;
-    socket.to(roomKey).emit('sync-data', data);
+    // Cache the latest data (in memory only — lost on server restart)
+    roomCache[roomKey] = { data: incoming, lastUpdate: Date.now() };
+    socket.to(roomKey).emit('sync-data', incoming);
   });
 
   // ----- Disconnect -----

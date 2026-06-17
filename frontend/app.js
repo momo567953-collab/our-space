@@ -598,14 +598,24 @@ function bindAllEvents() {
   bindCalendarEvents();
   bindMoodEvents();
   bindModalEvents();
+  bindExportImport();
 }
 
 // ===================== Main Screen =====================
 function enterMainScreen() {
   showScreen('main-screen');
   $('#partner-names').textContent = `${myName} & ${partnerName}`;
-  if (soloMode) { $('#solo-banner').style.display = 'flex'; $('#mode-badge').textContent = '体验模式'; $('#mode-badge').className = 'mode-badge solo'; }
-  else { $('#solo-banner').style.display = 'none'; $('#mode-badge').textContent = '\u{1F512} 端到端加密'; $('#mode-badge').className = 'mode-badge'; }
+  if (soloMode) {
+    $('#solo-banner').style.display = 'flex';
+    $('#mode-badge').textContent = '体验模式';
+    $('#mode-badge').className = 'mode-badge solo';
+    $('#data-bar').style.display = 'none';
+  } else {
+    $('#solo-banner').style.display = 'none';
+    $('#mode-badge').textContent = '\u{1F512} 端到端加密';
+    $('#mode-badge').className = 'mode-badge';
+    $('#data-bar').style.display = 'flex';
+  }
   if (socketAvailable && socket && !soloMode && partnerName !== '(等待TA)') {
     socket.emit('join-room', { name: myName, partnerName });
     // Request sync from partner after joining room
@@ -1153,6 +1163,71 @@ function saveMoodLocal(entry) {
 }
 
 // ===================== Modals =====================
+// ===================== Export/Import Backup =====================
+function bindExportImport() {
+  $('#btn-export-data').addEventListener('click', () => {
+    const data = getLocalRoomData();
+    const accounts = localStorage.getItem('our_space_accounts') || '{}';
+    const auth = localStorage.getItem('our_space_auth') || '';
+    const exportData = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      user: myName,
+      partner: partnerName,
+      inviteCode: inviteCode,
+      roomData: data,
+      accounts: JSON.parse(accounts),
+      auth: auth
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `our-space-backup-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    alert('备份文件已下载！\n\n换设备后在这里点"导入恢复"即可恢复所有数据。');
+  });
+
+  $('#btn-import-data').addEventListener('click', () => {
+    $('#import-file-input').click();
+  });
+
+  $('#import-file-input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const importData = JSON.parse(ev.target.result);
+        if (!importData.version || !importData.roomData) {
+          alert('无效的备份文件格式');
+          return;
+        }
+        // Restore pairing info
+        if (importData.inviteCode) {
+          inviteCode = importData.inviteCode;
+          localStorage.setItem('our_space_invite', importData.inviteCode);
+        }
+        if (importData.accounts) {
+          localStorage.setItem('our_space_accounts', JSON.stringify(importData.accounts));
+        }
+        if (importData.auth) {
+          localStorage.setItem('our_space_auth', importData.auth);
+        }
+        // Merge room data (not overwrite — keep existing + add new)
+        mergeRemoteData(importData.roomData);
+        alert('数据恢复成功！\n\n已合并备份中的内容到当前空间。');
+      } catch(err) {
+        alert('文件解析失败，请确认选择了正确的备份文件');
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
 function bindModalEvents() {
   $('#btn-close-photo').addEventListener('click', () => $('#modal-photo').classList.remove('active'));
   $$('.modal').forEach(modal => { modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); }); });
