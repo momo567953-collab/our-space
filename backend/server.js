@@ -89,7 +89,8 @@ function saveRoom(roomKey, room) {
     })),
     petState: room.petState,
     wishes: room.wishes || [],
-    events: room.events || []
+    events: room.events || [],
+    moods: room.moods || []
   };
   fs.writeFileSync(fp, JSON.stringify(toSave, null, 2), 'utf8');
 }
@@ -103,7 +104,8 @@ function ensureRoom(roomKey) {
     photos: [],
     petState: { hunger: 80, happy: 70, energy: 60 },
     wishes: [],
-    events: []
+    events: [],
+    moods: []
   };
   saveRoom(roomKey, room);
   return room;
@@ -280,7 +282,8 @@ io.on('connection', (socket) => {
       })),
       petState: room.petState,
       wishes: room.wishes || [],
-      events: room.events || []
+      events: room.events || [],
+      moods: room.moods || []
     };
 
     socket.emit('room-data', roomData);
@@ -403,6 +406,19 @@ io.on('connection', (socket) => {
     room.events = room.events.filter(x => x.id !== data.id);
     saveRoom(roomKey, room);
     socket.to(roomKey).emit('event-delete', data);
+  });
+
+  socket.on('mood-update', (data) => {
+    const { roomKey } = socket.data || {};
+    if (!roomKey) return;
+    const room = ensureRoom(roomKey);
+    if (!room.moods) room.moods = [];
+    // Keep only the latest mood per user
+    room.moods = room.moods.filter(m => m.by !== data.by);
+    room.moods.unshift({ value: data.value, by: data.by, time: new Date().toLocaleString('zh-CN') });
+    if (room.moods.length > 50) room.moods = room.moods.slice(0, 50);
+    saveRoom(roomKey, room);
+    socket.to(roomKey).emit('mood-update', data);
   });
 
   socket.on('disconnect', () => {

@@ -39,6 +39,8 @@ let petState = { hunger: 80, happy: 70, energy: 60 };
 let petMood = 'waiting';
 let calMonth = new Date().getMonth();
 let calYear = new Date().getFullYear();
+let myMood = 50;
+let partnerMood = 50;
 
 // ===================== Utilities =====================
 function $(sel) { return document.querySelector(sel); }
@@ -133,7 +135,7 @@ function layoutPhotosInHeart() {
 // ===================== Local Storage =====================
 function localRoomKey() { return 'our_space_room_' + (roomKey || getRoomKey(myName, partnerName || '(等待TA)')); }
 function getLocalRoomData() {
-  try { return JSON.parse(localStorage.getItem(localRoomKey())) || { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [] }; } catch(e) { return { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [] }; }
+  try { return JSON.parse(localStorage.getItem(localRoomKey())) || { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [] }; } catch(e) { return { milestones: [], notes: [], photos: [], petState: { hunger:80, happy:70, energy:60 }, wishes: [], events: [], moods: [] }; }
 }
 function saveLocalRoomData(data) { try { localStorage.setItem(localRoomKey(), JSON.stringify(data)); } catch(e) { console.warn('localStorage full'); } }
 
@@ -440,6 +442,14 @@ function tryConnectSocket() {
     socket.on('wish-delete', (data) => { const el = document.querySelector(`.wish-card[data-id="${data.id}"]`); if (el) el.remove(); checkWishEmpty(); removeWishLocal(data.id); });
     socket.on('event-new', (data) => { addEventCard(data); saveEventLocal(data); renderCalendar(); });
     socket.on('event-delete', (data) => { const el = document.querySelector(`.event-card[data-id="${data.id}"]`); if (el) el.remove(); checkEventEmpty(); removeEventLocal(data.id); renderCalendar(); });
+    socket.on('mood-update', (data) => {
+      if (data.by === myName) return; // ignore own echo
+      updatePartnerMoodDisplay(data.value, true);
+      const level = getMoodLevel(data.value);
+      const entry = { id: uid(), value: data.value, level: level.label, emoji: level.emoji, colorIdx: level.colorIdx, by: data.by, time: new Date().toLocaleString('zh-CN') };
+      addMoodHistory(entry);
+      saveMoodLocal(entry);
+    });
     socket.on('room-data', (data) => {
       $('#timeline-list').innerHTML = '';
       $('#heart-container').innerHTML = '';
@@ -458,7 +468,7 @@ function tryConnectSocket() {
       if (data.events && data.events.length) data.events.forEach(e => addEventCard(e));
       else checkEventEmpty();
       if (data.petState) { petState = data.petState; updatePetUI(); }
-      saveLocalRoomData({ milestones: data.milestones || [], notes: data.notes || [], photos: (data.photos || []).map(p => p.src ? p : {...p, src: p.file ? `/uploads/${p.file}` : ''}), petState: data.petState || petState, wishes: data.wishes || [], events: data.events || [] });
+      saveLocalRoomData({ milestones: data.milestones || [], notes: data.notes || [], photos: (data.photos || []).map(p => p.src ? p : {...p, src: p.file ? `/uploads/${p.file}` : ''}), petState: data.petState || petState, wishes: data.wishes || [], events: data.events || [], moods: data.moods || [] });
       renderCalendar();
     });
     socket.on('connect_error', () => {
@@ -514,7 +524,15 @@ function loadFromLocal() {
   if (data.wishes && data.wishes.length) { data.wishes.forEach(w => addWishCard(w)); } else { checkWishEmpty(); }
   if (data.events && data.events.length) { data.events.forEach(e => addEventCard(e)); } else { checkEventEmpty(); }
   if (data.petState) { petState = data.petState; updatePetUI(); }
+  if (data.moods && data.moods.length) { data.moods.slice(0, 50).forEach(m => addMoodHistory(m)); }
   renderCalendar();
+  // Restore moods from data
+  const myMoodEntry = data.moods && data.moods.find(m => m.by === myName);
+  if (myMoodEntry) { myMood = myMoodEntry.value; updateMyMoodDisplay(myMood, false); }
+  const partnerMoodEntry = data.moods && data.moods.find(m => m.by !== myName);
+  if (partnerMoodEntry) { partnerMood = partnerMoodEntry.value; updatePartnerMoodDisplay(partnerMood, false); }
+  $('#mood-name-me').textContent = myName;
+  $('#mood-name-partner').textContent = partnerName || 'TA';
 }
 
 function bindAllEvents() {
@@ -528,6 +546,7 @@ function bindAllEvents() {
   bindPetEvents();
   bindWishEvents();
   bindCalendarEvents();
+  bindMoodEvents();
   bindModalEvents();
 }
 
@@ -963,6 +982,118 @@ function renderCalendar() {
     cell.className = 'cal-cell other-month'; cell.textContent = d;
     grid.appendChild(cell);
   }
+}
+
+// ===================== Mood =====================
+const moodLevels = [
+  { min: 0, max: 16, label: '非常不好', emoji: '\u{1F62D}', colorIdx: 0 },
+  { min: 17, max: 33, label: '不好', emoji: '\u{1F614}', colorIdx: 1 },
+  { min: 34, max: 50, label: '一般', emoji: '\u{1F610}', colorIdx: 2 },
+  { min: 51, max: 66, label: '良好', emoji: '\u{1F642}', colorIdx: 3 },
+  { min: 67, max: 83, label: '好', emoji: '\u{1F60A}', colorIdx: 4 },
+  { min: 84, max: 100, label: '非常好', emoji: '\u{1F970}', colorIdx: 5 }
+];
+
+function getMoodLevel(val) {
+  const v = Math.max(0, Math.min(100, Math.round(val)));
+  return moodLevels.find(l => v >= l.min && v <= l.max) || moodLevels[2];
+}
+
+function bindMoodEvents() {
+  const slider = $('#mood-slider-me');
+  const numInput = $('#mood-number-me');
+  if (!slider || !numInput) return;
+
+  slider.addEventListener('input', () => {
+    const v = parseInt(slider.value);
+    numInput.value = v;
+    previewMyMood(v);
+  });
+  numInput.addEventListener('input', () => {
+    let v = parseInt(numInput.value);
+    if (isNaN(v)) v = 50;
+    v = Math.max(0, Math.min(100, v));
+    slider.value = v;
+    previewMyMood(v);
+  });
+
+  $('#btn-mood-submit').addEventListener('click', () => {
+    let v = parseInt(numInput.value);
+    if (isNaN(v)) v = 50;
+    v = Math.max(0, Math.min(100, v));
+    myMood = v;
+    const level = getMoodLevel(v);
+    const moodEntry = { id: uid(), value: v, level: level.label, emoji: level.emoji, colorIdx: level.colorIdx, by: myName, time: new Date().toLocaleString('zh-CN') };
+
+    updateMyMoodDisplay(v, true);
+    addMoodHistory(moodEntry);
+    saveMoodLocal(moodEntry);
+    if (socketAvailable && socket) socket.emit('mood-update', { value: v, by: myName });
+  });
+
+  // Init display
+  $('#mood-name-me').textContent = myName || '我';
+  $('#mood-name-partner').textContent = partnerName || 'TA';
+  previewMyMood(myMood);
+}
+
+function previewMyMood(v) {
+  const level = getMoodLevel(v);
+  const emojiEl = $('#mood-emoji-me');
+  const levelEl = $('#mood-level-me');
+  const valueEl = $('#mood-value-me');
+  const barEl = $('#mood-bar-me');
+  if (emojiEl) emojiEl.textContent = level.emoji;
+  if (levelEl) { levelEl.textContent = level.label; levelEl.className = 'mood-level-text mood-color-' + level.colorIdx; }
+  if (valueEl) { valueEl.textContent = v; valueEl.className = 'mood-value mood-color-' + level.colorIdx; }
+  if (barEl) barEl.style.width = (100 - v) + '%';
+}
+
+function updateMyMoodDisplay(v, animate) {
+  const level = getMoodLevel(v);
+  const emojiEl = $('#mood-emoji-me');
+  const levelEl = $('#mood-level-me');
+  const valueEl = $('#mood-value-me');
+  const barEl = $('#mood-bar-me');
+  if (emojiEl) { emojiEl.textContent = level.emoji; if (animate) { emojiEl.classList.remove('bounce'); void emojiEl.offsetWidth; emojiEl.classList.add('bounce'); } }
+  if (levelEl) { levelEl.textContent = level.label; levelEl.className = 'mood-level-text mood-color-' + level.colorIdx; }
+  if (valueEl) { valueEl.textContent = v; valueEl.className = 'mood-value mood-color-' + level.colorIdx; }
+  if (barEl) barEl.style.width = (100 - v) + '%';
+  if ($('#mood-slider-me')) $('#mood-slider-me').value = v;
+  if ($('#mood-number-me')) $('#mood-number-me').value = v;
+}
+
+function updatePartnerMoodDisplay(v, animate) {
+  partnerMood = v;
+  const level = getMoodLevel(v);
+  const emojiEl = $('#mood-emoji-partner');
+  const levelEl = $('#mood-level-partner');
+  const valueEl = $('#mood-value-partner');
+  const barEl = $('#mood-bar-partner');
+  if (emojiEl) { emojiEl.textContent = level.emoji; if (animate) { emojiEl.classList.remove('bounce'); void emojiEl.offsetWidth; emojiEl.classList.add('bounce'); } }
+  if (levelEl) { levelEl.textContent = level.label; levelEl.className = 'mood-level-text mood-color-' + level.colorIdx; }
+  if (valueEl) { valueEl.textContent = v; valueEl.className = 'mood-value mood-color-' + level.colorIdx; }
+  if (barEl) barEl.style.width = (100 - v) + '%';
+}
+
+function addMoodHistory(entry) {
+  const empty = document.querySelector('#mood-history-list .empty-state'); if (empty) empty.remove();
+  if (document.querySelector(`.mood-history-item[data-id="${entry.id}"]`)) return;
+  const item = document.createElement('div');
+  item.className = 'mood-history-item'; item.dataset.id = entry.id;
+  item.innerHTML = `<span class="mood-h-emoji">${entry.emoji}</span><span class="mood-h-level mood-color-${entry.colorIdx}">${escHtml(entry.level)}</span><span class="mood-h-value">${entry.value}</span><span class="mood-h-who">${escHtml(entry.by)}</span><span class="mood-h-time">${entry.time}</span>`;
+  $('#mood-history-list').prepend(item);
+  // Keep max 50 items
+  const list = $('#mood-history-list');
+  while (list.children.length > 50) list.lastChild.remove();
+}
+
+function saveMoodLocal(entry) {
+  const data = getLocalRoomData();
+  if (!data.moods) data.moods = [];
+  data.moods.unshift(entry);
+  if (data.moods.length > 50) data.moods = data.moods.slice(0, 50);
+  saveLocalRoomData(data);
 }
 
 // ===================== Modals =====================
