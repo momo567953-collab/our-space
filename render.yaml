@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: our-space
+    runtime: node
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    plan: free

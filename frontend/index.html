@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Our Space - 我们的空间</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===== 背景装饰 ===== -->
+  <div class="bg-gradient"></div>
+  <div class="bg-hearts" id="bg-hearts"></div>
+
+  <!-- ===== 登录/注册页 ===== -->
+  <div id="login-screen" class="screen active">
+    <div class="login-wrapper">
+      <div class="login-hearts">
+        <svg viewBox="0 0 120 100" width="80">
+          <path d="M60 88 C20 55, 0 30, 25 15 C40 5, 55 15, 60 30 C65 15, 80 5, 95 15 C120 30, 100 55, 60 88Z" fill="#f43f5e" opacity="0.85"/>
+        </svg>
+      </div>
+      <h1>Our Space</h1>
+      <p class="tagline">只属于你们两个人的私密空间</p>
+      <div class="login-card">
+        <!-- 切换登录/注册 -->
+        <div class="login-tabs">
+          <button class="login-tab active" id="tab-login">登录</button>
+          <button class="login-tab" id="tab-register">注册</button>
+        </div>
+
+        <!-- 登录表单 -->
+        <div id="form-login" class="login-form active">
+          <div class="form-group">
+            <label>昵称</label>
+            <input type="text" id="login-name" placeholder="你的昵称" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>密码</label>
+            <input type="password" id="login-pass" placeholder="输入密码" autocomplete="off">
+          </div>
+          <button id="btn-login" class="btn-primary">登录</button>
+          <div id="login-msg" class="msg-area"></div>
+        </div>
+
+        <!-- 注册表单 -->
+        <div id="form-register" class="login-form">
+          <div class="form-group">
+            <label>昵称</label>
+            <input type="text" id="reg-name" placeholder="起一个昵称吧（2-12字）" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>密码</label>
+            <input type="password" id="reg-pass" placeholder="设置密码（至少4位）" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>确认密码</label>
+            <input type="password" id="reg-pass2" placeholder="再次输入密码" autocomplete="off">
+          </div>
+          <button id="btn-register" class="btn-primary">注册</button>
+          <div id="register-msg" class="msg-area"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 配对页 ===== -->
+  <div id="pair-screen" class="screen">
+    <div class="pair-wrapper">
+      <h2>邀请对方加入</h2>
+      <p class="pair-desc">分享邀请码给对方，两人即可绑定空间</p>
+
+      <div class="share-link-box">
+        <p class="share-label">把这个链接发给对方</p>
+        <p class="share-url" id="share-url">-</p>
+        <button id="btn-copy-link" class="btn-small">复制链接</button>
+      </div>
+
+      <div class="invite-box">
+        <p class="invite-label">你的邀请码</p>
+        <p class="invite-code" id="my-invite-code">------</p>
+        <button id="btn-copy-code" class="btn-small">复制邀请码</button>
+      </div>
+
+      <div class="divider-text"><span>或者</span></div>
+
+      <div class="form-group">
+        <label>输入对方邀请码</label>
+        <input type="text" id="input-partner-code" placeholder="粘贴对方的邀请码" autocomplete="off">
+      </div>
+      <button id="btn-pair" class="btn-primary">绑定空间</button>
+      <div id="pair-msg" class="msg-area"></div>
+
+      <div class="divider-text"><span>还没有对方？</span></div>
+
+      <button id="btn-solo" class="btn-secondary">先自己试试 &rarr;</button>
+      <p class="solo-hint">不需要对方也能体验所有功能，之后随时可以配对</p>
+
+      <div class="server-config" id="server-config" style="display:none">
+        <p class="server-label">连接远程服务器</p>
+        <input type="text" id="input-server-url" placeholder="例如: https://our-space.onrender.com" autocomplete="off">
+        <button id="btn-set-server" class="btn-small">连接</button>
+        <div id="server-msg" class="msg-area"></div>
+      </div>
+      <button id="btn-toggle-server" class="btn-text-link">设置服务器地址</button>
+    </div>
+  </div>
+
+  <!-- ===== 主界面 ===== -->
+  <div id="main-screen" class="screen">
+    <!-- 顶部导航 -->
+    <header class="top-bar">
+      <div class="top-left">
+        <span class="app-title">Our Space</span>
+        <span class="partner-names" id="partner-names"></span>
+      </div>
+      <div class="top-right">
+        <span class="mode-badge" id="mode-badge"></span>
+        <button class="btn-icon" id="btn-logout" title="退出登录">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M17 7l-1.41 1.41L18.17 9H9v2h9.17l-2.58 2.58L17 15l5-5zM3 3h8v2H3v14h8v2H3c-1.1 0-2-.9-2-2V5c0-1.1.9-2 2-2z" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Solo mode banner -->
+    <div class="solo-banner" id="solo-banner" style="display:none">
+      <span>你正在单独体验模式</span>
+      <button id="btn-go-pair" class="btn-small">配对对方</button>
+    </div>
+
+    <!-- Tab 导航 -->
+    <nav class="tab-bar">
+      <button class="tab active" data-tab="timeline">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z" fill="currentColor"/></svg>
+        <span>时光线</span>
+      </button>
+      <button class="tab" data-tab="album">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1 2-.9 2-2zm0 0l-4-4H5l-2 2V4h16v12z" fill="currentColor"/></svg>
+        <span>照片墙</span>
+      </button>
+      <button class="tab" data-tab="messages">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" fill="currentColor"/></svg>
+        <span>留言板</span>
+      </button>
+      <button class="tab" data-tab="pet">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4.5 9.5c-1 0-2-.8-2-2s1-2 2-2 2 .8 2 2-1 2-2 2zm5-4c-1 0-2-.8-2-2s1-2 2-2 2 .8 2 2-1 2-2 2zm5 0c-1 0-2-.8-2-2s1-2 2-2 2 .8 2 2-1 2-2 2zm5 4c-1 0-2-.8-2-2s1-2 2-2 2 .8 2 2-1 2-2 2zM12 17.5c-3.5 0-5.5-2-5.5-4.5 0-1.5.8-2.5 2-3.2.6-.4 1.3-.2 1.7.3l.3.4c.3.4.9.5 1.3.2.6-.4 1.4-.4 2 0 .4.3 1 .2 1.3-.2l.3-.4c.4-.5 1.1-.7 1.7-.3 1.2.7 2 1.7 2 3.2-.2 2.5-2.2 4.5-5.7 4.5z" fill="currentColor"/></svg>
+        <span>宠物</span>
+      </button>
+      <button class="tab" data-tab="wishes">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 15.01l1.41-1.41L11 16.17l3.59-3.59L16 14.01l-5 5z" fill="currentColor"/></svg>
+        <span>心愿</span>
+      </button>
+      <button class="tab" data-tab="calendar">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z" fill="currentColor"/></svg>
+        <span>日历</span>
+      </button>
+    </nav>
+
+    <!-- 内容区域 -->
+    <div class="content-area">
+
+      <!-- 时光线 Tab -->
+      <div id="tab-timeline" class="tab-content active">
+        <div class="section-header">
+          <h3>我们的时光</h3>
+          <button class="btn-small" id="btn-add-milestone">+ 纪念日</button>
+        </div>
+        <div id="timeline-list" class="timeline-list">
+          <div class="empty-state">
+            <p>还没有记录哦</p>
+            <p class="hint">点击右上角添加你们的第一个纪念日</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 照片墙 Tab -->
+      <div id="tab-album" class="tab-content">
+        <div class="section-header">
+          <h3>照片墙</h3>
+          <label class="btn-small upload-btn">
+            + 上传照片
+            <input type="file" id="photo-upload" accept="image/*" multiple hidden>
+          </label>
+        </div>
+        <div class="heart-photo-wall" id="heart-photo-wall">
+          <div class="heart-container" id="heart-container">
+            <svg class="heart-outline" viewBox="0 0 512 512" width="420" height="380">
+              <path d="M256 448l-30-30C108 308 32 244 32 168 32 108 80 56 140 56c36 0 70 16 94 44l22 26 22-26c24-28 58-44 94-44 60 0 108 52 108 112 0 76-76 140-194 250z"
+                fill="none" stroke="#f43f5e" stroke-width="4" opacity="0.3"/>
+            </svg>
+          </div>
+          <div id="photo-empty-msg" class="empty-state">
+            <p>还没有照片</p>
+            <p class="hint">上传你们的第一张合照吧</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 留言板 Tab -->
+      <div id="tab-messages" class="tab-content">
+        <div class="section-header">
+          <h3>给 TA 留言</h3>
+        </div>
+        <div id="note-list" class="note-list">
+          <div class="empty-state">
+            <p>还没有留言</p>
+            <p class="hint">给 TA 写一段暖心的话吧</p>
+          </div>
+        </div>
+        <div class="note-input-area">
+          <textarea id="note-input" placeholder="写点什么给 TA..." rows="2"></textarea>
+          <div class="note-options">
+            <select id="note-color">
+              <option value="#fff1f2">粉色</option>
+              <option value="#eff6ff">蓝色</option>
+              <option value="#f0fdf4">绿色</option>
+              <option value="#fffbeb">黄色</option>
+              <option value="#faf5ff">紫色</option>
+            </select>
+            <button id="btn-send-note" class="btn-primary btn-sm">贴上去</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 宠物 Tab (小狗) -->
+      <div id="tab-pet" class="tab-content">
+        <div class="pet-scene">
+          <div class="pet-scene-sun"></div>
+          <div class="pet-scene-cloud"></div>
+          <div class="pet-scene-cloud2"></div>
+          <div class="pet-ground"></div>
+          <div class="pet-ground-flowers">
+            <div class="flower" style="left:15%;bottom:5%"><div class="flower-stem"></div><div class="flower-head f-pink"></div></div>
+            <div class="flower" style="left:45%;bottom:8%"><div class="flower-stem"></div><div class="flower-head f-yellow"></div></div>
+            <div class="flower" style="left:75%;bottom:3%"><div class="flower-stem"></div><div class="flower-head f-purple"></div></div>
+          </div>
+          <div class="pet-character" id="pet-character">
+            <div class="dog-body-container" id="dog-body">
+              <!-- Head -->
+              <div class="dog-head">
+                <div class="dog-ear left"><div class="dog-ear-inner"></div></div>
+                <div class="dog-ear right"><div class="dog-ear-inner"></div></div>
+                <div class="dog-face-patch"></div>
+                <div class="dog-eyes" id="dog-eyes">
+                  <div class="dog-eye left" id="dog-eye-l"></div>
+                  <div class="dog-eye right" id="dog-eye-r"></div>
+                </div>
+                <!-- Blush for happy/cuddle -->
+                <div class="dog-blush left" id="dog-blush-l"></div>
+                <div class="dog-blush right" id="dog-blush-r"></div>
+                <div class="dog-nose"></div>
+                <div class="dog-mouth" id="dog-mouth">
+                  <div class="dog-mouth-smile" id="mouth-shape"></div>
+                </div>
+                <div class="dog-tongue" id="dog-tongue"></div>
+                <div class="dog-cheeks">
+                  <div class="dog-cheek left"></div>
+                  <div class="dog-cheek right"></div>
+                </div>
+              </div>
+              <!-- Torso -->
+              <div class="dog-torso">
+                <div class="dog-chest-patch"></div>
+              </div>
+              <!-- Legs -->
+              <div class="dog-leg front-left"><div class="dog-paw"></div></div>
+              <div class="dog-leg front-right"><div class="dog-paw"></div></div>
+              <!-- Tail -->
+              <div class="dog-tail" id="dog-tail"></div>
+              <!-- Zzz -->
+              <div class="dog-zzz" id="dog-zzz">Zzz</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pet-name" id="pet-name">小汪</div>
+        <div class="pet-mood-text" id="pet-mood-text">小汪正在等你来玩~</div>
+
+        <div class="pet-stats">
+          <div class="stat">
+            <span class="stat-icon">&#127829;</span><span class="stat-label">饱食</span>
+            <div class="stat-bar"><div class="stat-fill hunger" id="stat-hunger" style="width:80%"></div></div>
+            <span class="stat-val" id="val-hunger">80</span>
+          </div>
+          <div class="stat">
+            <span class="stat-icon">&#128151;</span><span class="stat-label">心情</span>
+            <div class="stat-bar"><div class="stat-fill happy" id="stat-happy" style="width:70%"></div></div>
+            <span class="stat-val" id="val-happy">70</span>
+          </div>
+          <div class="stat">
+            <span class="stat-icon">&#128164;</span><span class="stat-label">精力</span>
+            <div class="stat-bar"><div class="stat-fill energy" id="stat-energy" style="width:60%"></div></div>
+            <span class="stat-val" id="val-energy">60</span>
+          </div>
+        </div>
+
+        <div class="pet-actions">
+          <button class="pet-btn" data-action="feed"><span class="pet-btn-icon">&#127829;</span><span>喂食</span></button>
+          <button class="pet-btn" data-action="play"><span class="pet-btn-icon">&#127922;</span><span>玩耍</span></button>
+          <button class="pet-btn" data-action="sleep"><span class="pet-btn-icon">&#128164;</span><span>睡觉</span></button>
+          <button class="pet-btn" data-action="pet"><span class="pet-btn-icon">&#128149;</span><span>摸摸</span></button>
+          <button class="pet-btn" data-action="bark"><span class="pet-btn-icon">&#128054;</span><span>汪汪</span></button>
+          <button class="pet-btn" data-action="cuddle"><span class="pet-btn-icon">&#129303;</span><span>撒娇</span></button>
+          <button class="pet-btn" data-action="bath"><span class="pet-btn-icon">&#128702;</span><span>洗澡</span></button>
+          <button class="pet-btn" data-action="walk"><span class="pet-btn-icon">&#127939;</span><span>散步</span></button>
+        </div>
+
+        <div class="pet-log" id="pet-log">
+          <p class="log-entry">小汪正在等你来玩~</p>
+        </div>
+      </div>
+
+      <!-- 心愿清单 Tab -->
+      <div id="tab-wishes" class="tab-content">
+        <div class="section-header">
+          <h3>心愿清单</h3>
+          <button class="btn-small" id="btn-add-wish">+ 新心愿</button>
+        </div>
+        <div id="wish-list" class="wish-list">
+          <div class="empty-state">
+            <p>还没有心愿</p>
+            <p class="hint">写下你们想一起做的事吧</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 日历提醒 Tab -->
+      <div id="tab-calendar" class="tab-content">
+        <div class="section-header">
+          <h3>日历提醒</h3>
+          <button class="btn-small" id="btn-add-event">+ 新提醒</button>
+        </div>
+        <div id="calendar-view" class="calendar-view">
+          <div class="calendar-header">
+            <button class="cal-nav" id="btn-cal-prev">&lsaquo;</button>
+            <span class="cal-month" id="cal-month-title"></span>
+            <button class="cal-nav" id="btn-cal-next">&rsaquo;</button>
+          </div>
+          <div class="calendar-grid" id="calendar-grid"></div>
+        </div>
+        <div id="event-list" class="event-list">
+          <div class="empty-state">
+            <p>没有提醒事项</p>
+            <p class="hint">添加你们的纪念日、生日、重要约会</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== 添加纪念日弹窗 ===== -->
+  <div id="modal-milestone" class="modal">
+    <div class="modal-content">
+      <h3>添加纪念日</h3>
+      <div class="form-group"><label>名称</label><input type="text" id="ms-title" placeholder="例如：我们在一起的日子"></div>
+      <div class="form-group"><label>日期</label><input type="date" id="ms-date"></div>
+      <div class="modal-actions"><button class="btn-ghost" id="btn-cancel-ms">取消</button><button class="btn-primary" id="btn-save-ms">保存</button></div>
+    </div>
+  </div>
+
+  <!-- ===== 新心愿弹窗 ===== -->
+  <div id="modal-wish" class="modal">
+    <div class="modal-content">
+      <h3>添加心愿</h3>
+      <div class="form-group"><label>心愿内容</label><input type="text" id="wish-title" placeholder="例如：一起去看海"></div>
+      <div class="form-group">
+        <label>分类</label>
+        <select id="wish-cat">
+          <option value="travel">旅行</option>
+          <option value="food">美食</option>
+          <option value="movie">电影</option>
+          <option value="gift">礼物</option>
+          <option value="daily">日常</option>
+          <option value="dream">梦想</option>
+        </select>
+      </div>
+      <div class="modal-actions"><button class="btn-ghost" id="btn-cancel-wish">取消</button><button class="btn-primary" id="btn-save-wish">许愿</button></div>
+    </div>
+  </div>
+
+  <!-- ===== 新提醒弹窗 ===== -->
+  <div id="modal-event" class="modal">
+    <div class="modal-content">
+      <h3>添加提醒</h3>
+      <div class="form-group"><label>事项</label><input type="text" id="event-title" placeholder="例如：TA的生日"></div>
+      <div class="form-group"><label>日期</label><input type="date" id="event-date"></div>
+      <div class="form-group">
+        <label>提醒类型</label>
+        <select id="event-type">
+          <option value="birthday">生日</option>
+          <option value="anniversary">纪念日</option>
+          <option value="date">约会</option>
+          <option value="reminder">提醒</option>
+        </select>
+      </div>
+      <div class="modal-actions"><button class="btn-ghost" id="btn-cancel-event">取消</button><button class="btn-primary" id="btn-save-event">添加</button></div>
+    </div>
+  </div>
+
+  <!-- ===== 照片查看弹窗 ===== -->
+  <div id="modal-photo" class="modal">
+    <div class="modal-content modal-photo-view">
+      <button class="modal-close" id="btn-close-photo">&times;</button>
+      <img id="photo-view-img" src="" alt="">
+      <p class="photo-info" id="photo-info"></p>
+    </div>
+  </div>
+
+  <!-- ===== 退出确认弹窗 ===== -->
+  <div id="modal-logout" class="modal">
+    <div class="modal-content">
+      <h3>退出登录</h3>
+      <p class="modal-desc">退出后需要重新输入昵称和密码登录，数据不会丢失。</p>
+      <div class="modal-actions"><button class="btn-ghost" id="btn-cancel-logout">取消</button><button class="btn-primary btn-danger" id="btn-confirm-logout">退出</button></div>
+    </div>
+  </div>
+
+  <!-- Socket.io from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js" onerror="window.__noSocketIO=true"></script>
+  <script src="app.js"></script>
+</body>
+</html>
